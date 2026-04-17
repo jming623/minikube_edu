@@ -1,0 +1,42 @@
+YAML 매니페스트 기반 배포 관리
+(사전 조건: minikube 클러스터 실행 중)
+
+목표: kubectl 명령어 대신 YAML 파일로 리소스를 선언적으로 배포·수정·삭제하는 흐름을 익히고,
+      Label/Selector 구조와 Deployment-Service 연결 방식을 이해한다.
+
+※ 기존 테스트 리소스 정리
+kubectl delete deployment hello
+kubectl delete service hello
+
+1. Deployment 배포
+kubectl apply -f deployment.yaml
+
+2. 배포 확인
+kubectl get deployments
+kubectl get pods -o wide
+
+3. Service 배포
+kubectl apply -f service.yaml
+
+4. 서비스 확인
+kubectl get services
+minikube service my-nginx
+
+5. 레플리카 수 변경 (YAML 수정 후 재적용)
+(deployment.yaml의 replicas: 2 → 4 로 수정)
+kubectl apply -f deployment.yaml
+kubectl get pods -o wide
+
+6. Label 확인
+kubectl get pods --show-labels
+kubectl get pods -l app=my-nginx
+
+7. Pod 상세 정보 확인
+kubectl describe pod <POD_NAME>
+
+8. 리소스 삭제
+kubectl delete -f service.yaml
+kubectl delete -f deployment.yaml
+
+9. 삭제 확인
+kubectl get all

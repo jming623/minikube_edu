@@ -1,0 +1,34 @@
+1.YAML_매니페스트_기반_배포_관리 회고
+
+· 설치 실습 시 작업 위치가 Windows system32인가?
+  → 아님. WSL Ubuntu는 Linux 홈(/home/사용자) 이 작업 위치.
+  → /mnt/c/WINDOWS/system32 경로를 통해 Window 환경에 접근할 수 있음.
+  → 필요시 심볼릭 링크를 통해 윈도우 파일을 Ubuntu 가상환경으로 옮겨오는것도 가능
+  예시: ln -s /mnt/d/JM/작업/2026년/260409_미니큐브 ~/minikube-edu
+
+· Deployment 적용 시 함께 생기는 것
+  → Deployment만 apply해도 ReplicaSet이 생성되고, ReplicaSet이 Pod 개수(replicas)를 유지한다.
+  → 흐름: Deployment → ReplicaSet → Pod. (템플릿 변경 시 새 ReplicaSet이 생기며 롤링 업데이트로 넘어갈 수 있음.)
+
+· Pod만으로 외부에서 접근이 가능한지?
+  → 불가능에 가깝다. Pod는 클러스터 내부 전용·비고정 IP를 쓰는 단위이고, 외부에 안정적으로 노출하려면 Service 등 연결 리소스가 필요하다.
+
+· Pod↔외부 연결 리소스 종류?
+  → Service(NodePort·LoadBalancer·ClusterIP), Ingress(+ 컨트롤러), Gateway API.
+
+· deployment.yaml중, matchLabels↔template.metadata.labels 관계
+  → spec.selector.matchLabels는 "이 Deployment가 관리할 Pod"를 고르는 조건이며, template.metadata.labels와 반드시 일치해야 한다.
+  → template 쪽 레이블이 실제 생성되는 Pod에 붙는다.
+
+· Service의 selector (NodePort)
+  → service의 selector는 Deployment/ReplicaSet 등 연결 리소스를 대상 설정이 아니고, Pod에 대한 설정임.
+  → 즉, deployment/replicaset 등의 리소스는 pod를 생성해주는 역할, service 는 pod를 연결해주는 역할 (독립적으로 동작)
+
+· template.spec의 containerPort의미
+  → Pod 안 컨테이너가 리슨하는 포트. 노드 80번과 동일 의미 아님.
+
+· 노드에서 curl localhost:80
+  → Pod는 다른 네트워크 네임스페이스라 보통 실패. Pod IP:80 또는 Service로 접근.
+
+· selector / template.labels / containerPort 재정리
+  → matchLabels=관리 대상 Pod 조건, template.labels=생성 Pod에 붙는 라벨, containerPort=Pod 내부 포트.
