@@ -1,0 +1,62 @@
+설치 Guide
+
+목표: WSL2 + Docker + Minikube 환경을 직접 구성하고 멀티노드 클러스터를 띄워 nginx를 배포함으로써,
+      쿠버네티스 클러스터의 구조(노드, Pod, Service)와 기본 배포 흐름을 이해한다.
+
+1. 윈도우 가상환경에서 ubuntu 설치
+wsl --install -d Ubuntu
+
+(이후 진입 방법: wsl.exe -d Ubuntu)
+user_name: jm95park
+password: s$st8f9y
+
+2. Docker 설치
+sudo apt update
+sudo apt install -y docker.io
+sudo usermod -aG docker $USER
+
+3. 재접속
+exit
+wsl.exe -d Ubuntu
+
+4. 도커 설치 확인
+docker ps
+
+5. Minikube 설치
+curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+sudo install minikube-linux-amd64 /usr/local/bin/minikube
+
+6. kubectl 설치
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install kubectl /usr/local/bin/kubectl
+
+7. 멀티 노드 클러스터 생성
+minikube start \
+  --driver=docker \
+  --nodes=2 \
+  --cpus=2 \
+  --memory=4096
+
+8. 클러스터 생성 결과 확인
+kubectl get nodes
+kubectl get nodes -o wide
+
+9. 테스트 배포
+kubectl create deployment hello --image=nginx
+kubectl expose deployment hello --type=NodePort --port=80
+
+10. Pod 확인
+kubectl get pods -o wide
+
+11. 서비스 확인
+minikube service hello
+(예시: 🎉  Opening service default/hello in default browser...
+👉  http://127.0.0.1:38729
+확인 후 접속해서
+웹Welcome to nginx! 확인)
+
+12. 노드 추가
+minikube node add
+
+13. 추가된 내용 확인
+kubectl get nodes -o wide

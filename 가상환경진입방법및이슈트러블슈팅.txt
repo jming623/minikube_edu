@@ -1,0 +1,12 @@
+0. WSL에 설치된 배포판 조회
+wsl.exe --list
+
+1. 가상환경 재진입
+wsl.exe -d Ubuntu
+-d = distribution(배포판)을 지정 옵션 ("Ubuntu"라는 이름의 배포판을 선택해서 실행한다는 의미)
+
+2. k8s 노드 확인이 안될 경우
+- minikube 상태 확인
+minikube status
+- minikube 상태가 Stoped일 경우
+minikube start

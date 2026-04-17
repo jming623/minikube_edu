@@ -1,0 +1,11 @@
+0.MINIKUBE_설치 실습 회고
+
+· kubectl expose deployment hello --type=NodePort --port=80
+  → Deployment를 "외부에 연다"는 뜻이 아니라, 그 Deployment의 Pod들을 묶는 Service 리소스를 만드는 명령.
+  → 결과물은 hello 이름의 Service이며, selector로 같은 레이블 Pod에 트래픽을 전달.
+  → NodePort는 노드 IP + NodePort(30000~32767)로 들어오는 연결을 Pod로 넘길 수 있게 하는 타입.
+
+· minikube service hello (터널)
+  → Service·Pod는 클러스터 안에 이미 존재하지만, Docker 드라이버 Minikube는 호스트(Windows 브라우저)에서 노드:NodePort로 바로 닿기 어려운 경우가 많음.
+  → 이 명령은 127.0.0.1 등 로컬 포트 ↔ 클러스터 Service로 포트 포워딩(터널)을 열어 줌. 웹서버 프로세스가 아님.
+  → 터널을 연 터미널 프로세스가 끝나면 그 URL로의 접속은 끊김. 클러스터 안 Service 자체는 그대로.
