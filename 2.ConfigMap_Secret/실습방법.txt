@@ -1,0 +1,110 @@
+ConfigMap & Secret
+(사전 조건: minikube 클러스터 실행 중)
+
+목표: 애플리케이션 설정값(ConfigMap)과 민감 정보(Secret)를 Pod 외부에서 주입하는 두 가지 패턴을 익힌다.
+      ① 환경변수 주입 방식  ② 볼륨 마운트 방식
+
+============================================================
+Part A. ConfigMap & Secret 생성
+============================================================
+
+1. ConfigMap 생성
+kubectl apply -f configmap.yaml
+
+2. ConfigMap 확인
+kubectl get configmap app-config
+kubectl describe configmap app-config
+
+3. Secret 생성
+kubectl apply -f secret.yaml
+
+4. Secret 확인
+kubectl get secret app-secret
+kubectl describe secret app-secret
+
+5. Secret 값 디코딩 (base64)
+kubectl get secret app-secret -o jsonpath='{.data.DB_USERNAME}' | base64 -d
+kubectl get secret app-secret -o jsonpath='{.data.DB_PASSWORD}' | base64 -d
+
+※ Secret의 data 필드는 base64 인코딩된 값이다.
+   base64 인코딩: echo -n 'admin' | base64        → YWRtaW4=
+   base64 디코딩: echo 'YWRtaW4=' | base64 -d     → admin
+
+============================================================
+Part B. 환경변수 주입 방식
+============================================================
+
+6. 환경변수 주입 Deployment 배포
+kubectl apply -f deployment-env.yaml
+
+7. Pod 상태 확인
+kubectl get pods -l inject-type=env
+
+8. Pod 로그로 환경변수 확인
+kubectl logs -l inject-type=env
+
+9. Pod 내부에서 직접 환경변수 확인
+kubectl exec -it <POD_NAME> -- sh
+env | grep -E 'APP_|DB_'
+exit
+
+============================================================
+Part C. 볼륨 마운트 방식
+============================================================
+
+10. 볼륨 마운트 Deployment 배포
+kubectl apply -f deployment-vol.yaml
+
+11. Pod 상태 확인
+kubectl get pods -l inject-type=volume
+
+12. 마운트된 ConfigMap 파일 확인 (nginx 설정)
+kubectl exec -it <POD_NAME> -- cat /etc/nginx/conf.d/default.conf
+
+13. 마운트된 Secret 파일 확인
+kubectl exec -it <POD_NAME> -- ls /etc/app-secret/
+kubectl exec -it <POD_NAME> -- cat /etc/app-secret/DB_USERNAME
+kubectl exec -it <POD_NAME> -- cat /etc/app-secret/DB_PASSWORD
+
+14. nginx 동작 확인 (ConfigMap으로 주입한 설정 반영 여부)
+kubectl exec -it <POD_NAME> -- curl localhost
+
+============================================================
+Part D. ConfigMap 수정 후 반영 확인
+============================================================
+
+15. ConfigMap의 nginx.conf 키 내용 실시간 수정
+kubectl edit configmap app-config
+(nginx.conf 아래의 return 200 메시지를 변경 후 저장)
+예시: 'ConfigMap Volume Mount Test OK\n' → 'ConfigMap Updated!\n'
+
+※ APP_LOG_LEVEL 등 일반 키는 볼륨에 마운트되지 않으므로 수정해도 Pod에 반영되지 않는다.
+   deployment-vol.yaml의 items에서 nginx.conf 키만 마운트하도록 지정했기 때문이다.
+
+16. 볼륨 마운트 Pod에서 변경 반영 확인 (약 30~60초 후 자동 반영)
+kubectl exec -it <POD_NAME> -- cat /etc/nginx/conf.d/default.conf
+
+17. nginx reload (파일은 갱신됐지만 nginx가 새 설정을 읽으려면 reload 필요)
+kubectl exec -it <POD_NAME> -- nginx -s reload
+
+18. curl로 실제 응답 확인
+kubectl exec -it <POD_NAME> -- curl localhost
+
+※ 환경변수 방식은 Pod 재시작 전까지 반영되지 않는다.
+※ 볼륨 마운트 방식은 kubelet이 파일을 자동 갱신하지만, nginx처럼 기동 시점에 설정을 읽는 프로세스는
+   nginx -s reload 또는 Pod 재시작이 있어야 새 설정이 실제로 적용된다.
+
+============================================================
+Part E. 리소스 정리
+============================================================
+
+19. 리소스 삭제
+kubectl delete -f deployment-vol.yaml
+kubectl delete -f deployment-env.yaml
+kubectl delete -f secret.yaml
+kubectl delete -f configmap.yaml
+
+20. 삭제 확인
+kubectl get all
+kubectl get configmap
+kubectl get secret

@@ -1,0 +1,23 @@
+2.ConfigMap_Secret 회고
+
+· Secret의 TYPE: Opaque
+  → Kubernetes가 키/값 형식을 특별히 검증하지 않는 “일반 사용자 정의 비밀” 타입.
+  → tls, dockerconfigjson, service-account-token 등은 용도별로 고정 키·규칙이 있는 반면, Opaque는 가장 흔한 기본값.
+
+· envFrom + configMapRef / secretRef
+  → 해당 ConfigMap·Secret의 키–값 전부를 컨테이너 환경 변수로 주입한다.
+  → 일부만 쓰려면 env + valueFrom으로 키를 골라 넣는 방식.
+  → ConfigMap과 Secret에 동일한 키가 있으면 목록에서 나중에 오는 쪽이 우선(여기서는 secretRef가 나중이면 Secret 값이 이김).
+
+· YAML에는 base64인데 Pod에서 echo하면 평문으로 보이는 이유
+  → Secret의 data 필드는 API에 넘길 때의 표현(base64)이고, 클러스터 저장·Pod 주입 시에는 디코딩된 실제 값으로 취급된다.
+  → kubelet이 환경 변수(또는 볼륨 파일)로 넣을 때는 디코딩된 값이 들어가므로, 컨테이너 안에서는 평문이 보인다.
+  → kubectl get secret -o yaml 등으로 보면 다시 base64로 보이는 것은 출력 형식 때문.
+
+· Secret에 값 넣을 때: data vs stringData
+  → data: 반드시 base64로 적어야 함. 평문 넣으면 apply 시 검증 오류.
+  → stringData: 평문으로 적어도 됨. 적용 시 API가 내부적으로 처리(실습·개발 편의에 좋음).
+
+· Kubernetes의 Secret/ConfigMap 볼륨 마운트 동작 원리
+  → Secret을 볼륨으로 마운트하면, Kubernetes는 data의 각 키(key) 하나를 파일 하나로 만들어서 지정한 경로에 넣음.
+  → 특정 key만 특정 파일명으로 마운트하고 싶을 떄는 item를 사용하면 됨.
