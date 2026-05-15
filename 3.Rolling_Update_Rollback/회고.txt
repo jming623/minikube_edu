@@ -1,0 +1,121 @@
+3.Rolling_Update_Rollback 회고
+
+· readinessProbe란?
+  → Pod 안의 컨테이너가 "트래픽을 받을 준비가 됐는지"를 주기적으로 체크하는 헬스체크 설정이다.
+  → probe를 통과한 Pod만 Service의 엔드포인트에 등록되어 트래픽을 받는다.
+  → 통과 못하면 엔드포인트에서 제외되어 트래픽이 차단된다.
+
+  동작 방식 (이번 실습 기준):
+    httpGet으로 localhost:80/ 에 HTTP GET 요청 → 200 응답이 오면 "준비됨" 판단
+    initialDelaySeconds: 5  → Pod 시작 후 5초 뒤부터 체크 시작
+    periodSeconds: 3        → 3초마다 반복 체크
+
+  체크 방식 3가지:
+    httpGet  → HTTP 응답 코드로 판단 (200~399이면 성공)
+    tcpSocket→ 포트가 열려있으면 성공
+    exec     → 명령어 실행 후 exit code 0이면 성공
+
+· readinessProbe는 롤링 업데이트에서 사실상 필수인가?
+  → 엄밀히는 필수가 아니지만, 진정한 무중단 배포를 원한다면 사실상 필수다.
+  → readinessProbe 없이도 maxSurge/maxUnavailable 설정대로 Pod를 순차 교체하는 롤링 업데이트 자체는 동작한다.
+  → 문제는 Kubernetes가 "준비됨" 판단을 Running 상태 진입 시점으로 봐버린다는 점이다.
+  → Running ≠ 실제로 요청 처리 가능. Spring Boot처럼 초기화에 수 초~수십 초가 걸리는 앱은
+     Running이 됐어도 내부 초기화 중에 트래픽이 들어오면 에러가 난다.
+
+  readinessProbe 없을 때:
+    새 Pod → Running → 즉시 트래픽 유입 → 초기화 중 에러 발생 가능
+
+  readinessProbe 있을 때:
+    새 Pod → Running → probe 통과할 때까지 트래픽 차단 → 통과 후 유입
+
+  → nginx처럼 뜨자마자 응답 가능한 앱은 없어도 큰 문제가 없다.
+  → 하지만 초기화 시간이 있는 실무 앱에서는 사실상 필수이며,
+     실무에서는 readinessProbe를 기본값처럼 항상 함께 설정하는 관행이 있다.
+
+─────────────────────────────────────────────
+
+· 라벨(labels)과 셀렉터(selector) 구분
+
+  metadata.labels (Deployment 리소스)
+  → Deployment 객체 자체에 붙는 태그.
+  → Pod 소유·매칭과는 무관하고, 리소스를 분류·조회할 때 사용.
+     예) kubectl get deploy -l app=my-app
+
+  spec.selector.matchLabels
+  → "이 Deployment(ReplicaSet)가 관리할 Pod"를 결정하는 조건.
+  → spec.template.metadata.labels 와 반드시 일치해야 한다.
+  → Kubernetes API가 불일치를 거부한다.
+
+  Service의 spec.selector
+  → Deployment 이름이 아니라, 라벨이 일치하는 Pod를 직접 선택해 트래픽을 전달.
+  → Service는 Pod가 어느 Deployment 소속인지 신경 쓰지 않는다.
+
+· containers[].name 의 역할
+
+  → 같은 Pod 안에서 여러 컨테이너를 구분하는 식별자.
+  → Deployment 이름·라벨과 같은 문자열을 써도 되지만 역할은 완전히 다름.
+  → 아래 상황에서 "-c 컨테이너명" 형태로 사용:
+       kubectl logs <pod> -c my-app
+       kubectl exec -it <pod> -c my-app -- /bin/sh
+  → kubectl describe pod 출력에서 어느 컨테이너가 재시작/실패했는지 확인할 때도 등장.
+
+· NodePort 접근 방식
+
+  → spec.ports.nodePort: 30080 → 노드 IP:30080 으로 외부 접근.
+  → minikube 환경에서는 단순 localhost 가 안 될 수 있음.
+     minikube ip 로 노드 IP 확인 후 <minikube_ip>:30080 사용하거나,
+     minikube service my-app-svc 명령으로 자동 터널링.
+  → 트래픽은 Ready 상태인 Pod들로 분산됨. readiness 실패 Pod는 Endpoint에서 제외.
+
+· 롤링 업데이트 히스토리 / revisionHistoryLimit
+
+  revisionHistoryLimit: 5
+  → "비활성 ReplicaSet을 최대 몇 개까지 보존할지"의 상한값.
+  → rollout history 줄 수가 정확히 5줄이 되는 것이 아니라,
+     초과분 ReplicaSet이 오래된 것부터 정리되는 방식.
+  → kubectl rollout history deployment/my-app 으로 리비전 목록 확인.
+  → CHANGE-CAUSE 컬럼은 kubernetes.io/change-cause 어노테이션 값이 표시됨.
+
+  ReplicaSet 보존 방식:
+  → 삭제되지 않고 클러스터 안에 ReplicaSet 리소스로 그대로 존재한다.
+  → kubectl get replicaset 으로 직접 확인 가능.
+  → 현재 사용 중인 RS는 DESIRED/READY 가 정상값, 보존 중인 RS는 0/0 상태.
+
+    예시)
+    NAME                  DESIRED   CURRENT   READY
+    my-app-7d6b4f9c8       4         4         4    ← 현재 활성
+    my-app-5c8b3a1d9       0         0         0    ← 히스토리 보존
+    my-app-6f9c2e7b4       0         0         0    ← 히스토리 보존
+
+  롤백 시 동작 방식:
+  → 보존된 RS를 그대로 "살리는" 게 아니라, 해당 RS의 Pod 스펙(이미지 등)을
+     Deployment 템플릿에 덮어쓰고 새 롤링 업데이트를 트리거하는 방식.
+
+  5개 초과 시 삭제 기준:
+  → 비활성(DESIRED=0) RS 중 가장 오래된 것부터 삭제.
+  → 현재 활성 RS는 카운트에서 제외되므로, 실제 클러스터에 남는 RS 수는
+     revisionHistoryLimit + 1(현재 활성) 이 된다.
+
+· kubectl set image 명령
+
+  형식: kubectl set image deployment/<Deployment명> <컨테이너명>=<이미지:태그>
+  예)   kubectl set image deployment/my-app my-app=nginx:1.26
+
+  → "deployment/my-app" : Deployment 리소스 지정.
+  → "my-app=nginx:1.26" : containers[].name 이 my-app 인 컨테이너의 image 를 변경.
+  → --record 옵션은 CHANGE-CAUSE 에 명령줄을 남기던 방식이었으나 deprecated.
+     현재는 어노테이션으로 직접 기록하는 방식 권장.
+
+· kubectl rollout undo 동작 원리
+
+  kubectl rollout undo deployment/my-app
+  → 바로 이전 리비전의 Pod 스펙으로 되돌림.
+  → undo 자체도 새 리비전으로 기록되므로 히스토리 항목이 추가될 수 있음.
+
+  연속 undo 시 핑퐁 현상:
+  → undo 후 "직전 리비전"이 방금 되돌리기 전 상태가 되어,
+     A → B → A → B … 식으로 두 설정 사이를 왔다 갔다 하게 됨.
+
+  특정 리비전으로 롤백하려면:
+  → kubectl rollout undo deployment/my-app --to-revision=<번호>
+     (번호는 kubectl rollout history 로 확인)
